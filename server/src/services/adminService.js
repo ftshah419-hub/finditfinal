@@ -17,40 +17,90 @@ export const adminService = {
   async getDashboardStats() {
     const [
       totalUsers,
+      activeUsers,
+      adminUsers,
       totalItems,
+      lostItems,
+      foundItems,
       pendingItems,
       approvedItems,
+      rejectedItems,
       resolvedItems,
       totalClaims,
       pendingClaims,
+      approvedClaims,
+      rejectedClaims,
       pendingReports,
-      pendingAIMatches
+      pendingAIMatches,
+      recentItems,
+      recentClaims,
+      recentUsers,
+      recentLogs
     ] = await Promise.all([
       User.countDocuments(),
+      User.countDocuments({ isActive: true }),
+      User.countDocuments({ role: 'ADMIN' }),
       Item.countDocuments(),
+      Item.countDocuments({ type: 'LOST' }),
+      Item.countDocuments({ type: 'FOUND' }),
       Item.countDocuments({ status: 'PENDING' }),
       Item.countDocuments({ status: 'APPROVED' }),
+      Item.countDocuments({ status: 'REJECTED' }),
       Item.countDocuments({ status: 'RESOLVED' }),
       Claim.countDocuments(),
       Claim.countDocuments({ status: 'PENDING' }),
+      Claim.countDocuments({ status: 'APPROVED' }),
+      Claim.countDocuments({ status: 'REJECTED' }),
       Report.countDocuments({ status: 'PENDING' }),
-      AIMatch.countDocuments({ status: 'PENDING' })
+      AIMatch.countDocuments({ status: 'PENDING' }),
+      Item.find()
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .populate('reportedBy', 'name email')
+        .populate('categoryId', 'name')
+        .lean(),
+      Claim.find()
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .populate('claimantId', 'name email')
+        .populate('itemId', 'title type status location images')
+        .lean(),
+      User.find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .select('name email role isActive createdAt')
+        .lean(),
+      activityLogService.getLogs({ limit: 6 })
     ]);
 
     return {
-      users: { total: totalUsers },
+      users: {
+        total: totalUsers,
+        active: activeUsers,
+        inactive: Math.max(0, totalUsers - activeUsers),
+        adminStaff: adminUsers
+      },
       items: {
         total: totalItems,
+        lost: lostItems,
+        found: foundItems,
         pending: pendingItems,
         approved: approvedItems,
+        rejected: rejectedItems,
         resolved: resolvedItems
       },
       claims: {
         total: totalClaims,
-        pending: pendingClaims
+        pending: pendingClaims,
+        approved: approvedClaims,
+        rejected: rejectedClaims
       },
       reports: { pending: pendingReports },
-      aiMatches: { pending: pendingAIMatches }
+      aiMatches: { pending: pendingAIMatches },
+      recentItems,
+      recentClaims,
+      recentUsers,
+      recentLogs: recentLogs?.logs || []
     };
   },
 
@@ -78,8 +128,57 @@ export const adminService = {
       User.countDocuments(filter)
     ]);
 
+    // Aggregate report and claim counts for these users
+    const userIds = users.map((u) => u._id);
+    let itemCountsMap = {};
+    let claimCountsMap = {};
+
+    if (userIds.length > 0) {
+      try {
+        const [itemStats, claimStats] = await Promise.all([
+          Item.aggregate([
+            { $match: { reportedBy: { $in: userIds } } },
+            { $group: { _id: { user: '$reportedBy', type: '$type' }, count: { $sum: 1 } } }
+          ]),
+          Claim.aggregate([
+            { $match: { claimantId: { $in: userIds } } },
+            { $group: { _id: '$claimantId', count: { $sum: 1 } } }
+          ])
+        ]);
+
+        for (const stat of itemStats) {
+          const userIdStr = stat._id.user.toString();
+          if (!itemCountsMap[userIdStr]) {
+            itemCountsMap[userIdStr] = { lost: 0, found: 0, total: 0 };
+          }
+          if (stat._id.type === 'LOST') {
+            itemCountsMap[userIdStr].lost += stat.count;
+          } else if (stat._id.type === 'FOUND') {
+            itemCountsMap[userIdStr].found += stat.count;
+          }
+          itemCountsMap[userIdStr].total += stat.count;
+        }
+
+        for (const stat of claimStats) {
+          const userIdStr = stat._id.toString();
+          claimCountsMap[userIdStr] = stat.count;
+        }
+      } catch {
+        // Fallback gracefully without aggregate counts
+      }
+    }
+
+    const enrichedUsers = users.map((u) => {
+      const uId = u._id.toString();
+      return {
+        ...u,
+        reportsSummary: itemCountsMap[uId] || { lost: 0, found: 0, total: 0 },
+        claimsCount: claimCountsMap[uId] || 0
+      };
+    });
+
     return {
-      users,
+      users: enrichedUsers,
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -90,14 +189,36 @@ export const adminService = {
   },
 
   /**
-   * Get user details by ID
+   * Get user details by ID along with recent reports and claims
    */
   async getUserById(userId) {
     const user = await User.findById(userId);
     if (!user) {
       throw ApiError.notFound('User not found.', 'USER_NOT_FOUND');
     }
-    return user;
+
+    const [items, claims, reportsCount, claimsCount] = await Promise.all([
+      Item.find({ reportedBy: userId })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate('categoryId', 'name')
+        .lean(),
+      Claim.find({ claimantId: userId })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate('itemId', 'title type status location images')
+        .lean(),
+      Item.countDocuments({ reportedBy: userId }),
+      Claim.countDocuments({ claimantId: userId })
+    ]);
+
+    return {
+      ...(user.toObject ? user.toObject() : user),
+      reportsCount,
+      claimsCount,
+      recentItems: items,
+      recentClaims: claims
+    };
   },
 
   /**
@@ -138,7 +259,12 @@ export const adminService = {
 
     if (search) {
       const regex = new RegExp(search.trim(), 'i');
-      filter.$or = [{ title: regex }, { description: regex }];
+      filter.$or = [
+        { title: regex },
+        { description: regex },
+        { 'location.address': regex },
+        { 'location.city': regex }
+      ];
     }
 
     const skip = (Math.max(1, page) - 1) * limit;
@@ -178,7 +304,16 @@ export const adminService = {
     if (!item) {
       throw ApiError.notFound('Item not found.', 'ITEM_NOT_FOUND');
     }
-    return item;
+
+    const claims = await Claim.find({ itemId })
+      .populate('claimantId', 'name email phone')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return {
+      ...(item.toObject ? item.toObject() : item),
+      claims
+    };
   },
 
   /**

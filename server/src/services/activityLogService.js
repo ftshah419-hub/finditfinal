@@ -45,10 +45,14 @@ export const activityLogService = {
   /**
    * Fetch activity logs with pagination and filters
    */
-  async getLogs({ page = 1, limit = 20, entityType, actorId } = {}) {
+  async getLogs({ page = 1, limit = 20, entityType, actorId, search } = {}) {
     const filter = {};
     if (entityType) filter.entityType = entityType;
     if (actorId) filter.actorId = actorId;
+    if (search) {
+      const searchRegex = new RegExp(search.trim(), 'i');
+      filter.$or = [{ action: searchRegex }, { description: searchRegex }];
+    }
 
     const skip = (Math.max(1, page) - 1) * limit;
 

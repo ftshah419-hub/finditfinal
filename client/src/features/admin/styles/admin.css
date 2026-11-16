@@ -1,0 +1,44 @@
+/* FINDIT Admin Module Styles — Modern SaaS Institutional Aesthetic */
+
+:root {
+  --admin-primary: #003ec3;
+  --admin-primary-container: #2457e8;
+  --admin-secondary: #005ac4;
+  --admin-secondary-container: #4e8eff;
+  --admin-surface: #f8f9ff;
+  --admin-surface-low: #eff4ff;
+  --admin-surface-card: #ffffff;
+  --admin-surface-high: #dce9ff;
+  --admin-text-main: #0b1c30;
+  --admin-text-muted: #434655;
+  --admin-border: #dce4f0;
+  --admin-success: #16845b;
+  --admin-warning: #b7791f;
+  --admin-error: #ba1a1a;
+}
+
+/* Custom scrollbars for clean table layouts */
+.admin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.admin-scrollbar::-webkit-scrollbar-track {
+  background: #eff4ff;
+  border-radius: 4px;
+}
+.admin-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbdbf5;
+  border-radius: 4px;
+}
+.admin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #a8b5ca;
+}
+
+/* Smooth transition utility */
+.admin-card {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.admin-card:hover {
+  transform: translateY(-1px);
+}
