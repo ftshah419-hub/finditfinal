@@ -111,7 +111,11 @@ export const adminController = {
 
   reviewAIMatch: asyncHandler(async (req, res) => {
     const { status } = req.body;
-    const match = await aiMatchService.reviewAIMatch(req.params.id, req.user._id, { status });
+    const reviewFn = aiMatchService.reviewAIMatch || aiMatchService.reviewMatch;
+    if (typeof reviewFn !== 'function') {
+      throw ApiError.internal('AI Match review service is unavailable.');
+    }
+    const match = await reviewFn.call(aiMatchService, req.params.id, req.user._id, { status });
     return ApiResponse.ok(res, { match }, 'AI match review recorded');
   }),
 

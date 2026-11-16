@@ -35,9 +35,13 @@ export const reportService = {
   /**
    * List reports for Admin moderation
    */
-  async getReports({ status, page = 1, limit = 10 } = {}) {
+  async getReports({ status, search, page = 1, limit = 10 } = {}) {
     const filter = {};
     if (status) filter.status = status;
+    if (search) {
+      const searchRegex = new RegExp(search.trim(), 'i');
+      filter.$or = [{ reason: searchRegex }, { description: searchRegex }];
+    }
 
     const skip = (Math.max(1, page) - 1) * limit;
 
