@@ -23,6 +23,35 @@ export const createItemValidator = [
     .notEmpty().withMessage('Item date is required')
     .isISO8601().withMessage('Item date must be a valid ISO8601 date'),
 
+  body('location').customSanitizer((value, { req }) => {
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        req.body.location = parsed;
+        return parsed;
+      } catch {
+        // Continue
+      }
+    }
+    if (!value || typeof value !== 'object') {
+      const constructed = {
+        address: req.body['location.address'] || req.body.address,
+        city: req.body['location.city'] || req.body.city,
+        district: req.body['location.district'] || req.body.district,
+        state: req.body['location.state'] || req.body.state,
+        coordinates: {
+          latitude: req.body['location.coordinates.latitude'] || req.body.latitude,
+          longitude: req.body['location.coordinates.longitude'] || req.body.longitude
+        }
+      };
+      if (constructed.address || constructed.city || constructed.state) {
+        req.body.location = constructed;
+        return constructed;
+      }
+    }
+    return value;
+  }),
+
   body('location.address')
     .trim()
     .notEmpty().withMessage('Location address is required'),
@@ -73,6 +102,19 @@ export const updateItemValidator = [
   body('itemDate')
     .optional()
     .isISO8601().withMessage('Item date must be a valid ISO8601 date'),
+
+  body('location').optional().customSanitizer((value, { req }) => {
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        req.body.location = parsed;
+        return parsed;
+      } catch {
+        // Continue
+      }
+    }
+    return value;
+  }),
 
   body('location.address')
     .optional()

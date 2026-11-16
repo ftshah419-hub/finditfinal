@@ -7,6 +7,13 @@ import UserDashboard from './pages/UserDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 
+// Public Website Pages (Person 2)
+import Home from './features/public/pages/Home';
+import BrowseItems from './features/public/pages/BrowseItems';
+import About from './features/public/pages/About';
+import Contact from './features/public/pages/Contact';
+import Help from './features/public/pages/Help';
+
 // Root redirect handler based on authentication state
 const RootRedirect = () => {
   const { user, isAuthenticated, loading } = useAuth();
@@ -36,13 +43,20 @@ export const App = () => {
     >
       <AuthProvider>
         <Routes>
-          {/* Public Authentication Routes */}
+          {/* Public Website Routes (Person 2) */}
+          <Route path="/" element={<Home />} />
+          <Route path="/browse" element={<BrowseItems />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/help" element={<Help />} />
+
+          {/* Public Authentication Routes (Person 1) */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
-          {/* Protected User Dashboard */}
+          {/* Protected User Dashboard (Person 2) */}
           <Route
-            path="/dashboard"
+            path="/dashboard/*"
             element={
               <ProtectedRoute>
                 <UserDashboard />
@@ -50,7 +64,7 @@ export const App = () => {
             }
           />
 
-          {/* Protected Admin Dashboard */}
+          {/* Protected Admin Dashboard (Person 3) */}
           <Route
             path="/admin/dashboard"
             element={
@@ -60,8 +74,7 @@ export const App = () => {
             }
           />
 
-          {/* Root and Catch-All Redirects */}
-          <Route path="/" element={<RootRedirect />} />
+          {/* Catch-All Redirects */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
