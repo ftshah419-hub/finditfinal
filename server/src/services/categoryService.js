@@ -11,10 +11,32 @@ export const categoryService = {
     const filter = {};
     if (activeOnly) filter.isActive = true;
 
-    return Category.find(filter)
+    const categories = await Category.find(filter)
       .populate('createdBy', 'name email')
       .sort({ name: 1 })
       .lean();
+
+    const categoryIds = categories.map((c) => c._id);
+    const itemCountsMap = {};
+
+    if (categoryIds.length > 0) {
+      try {
+        const stats = await Item.aggregate([
+          { $match: { categoryId: { $in: categoryIds } } },
+          { $group: { _id: '$categoryId', count: { $sum: 1 } } }
+        ]);
+        for (const s of stats) {
+          itemCountsMap[s._id.toString()] = s.count;
+        }
+      } catch {
+        // Fallback without counts
+      }
+    }
+
+    return categories.map((c) => ({
+      ...c,
+      itemCount: itemCountsMap[c._id.toString()] || 0
+    }));
   },
 
   /**
