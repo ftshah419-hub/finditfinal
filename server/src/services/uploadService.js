@@ -16,22 +16,15 @@ export const uploadService = {
     const isDev = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
 
     if (!isCloudinaryConfigured()) {
-      if (isDev) {
-        console.warn('[Cloudinary] Cloudinary not configured in .env. Using development data URI fallback.');
-        const isPng = buffer[0] === 0x89 && buffer[1] === 0x50;
-        const isWebp = buffer[8] === 0x57 && buffer[9] === 0x45;
-        const format = isPng ? 'png' : isWebp ? 'webp' : 'jpeg';
-        return {
-          url: `data:image/${format};base64,${buffer.toString('base64')}`,
-          publicId: `dev_fallback_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-          format
-        };
-      }
-
-      throw ApiError.internal(
-        'Cloudinary credentials are not configured on the server. Image upload is unavailable.',
-        'CLOUDINARY_NOT_CONFIGURED'
-      );
+      console.warn('[Cloudinary] Cloudinary credentials not configured. Using data URI fallback.');
+      const isPng = buffer[0] === 0x89 && buffer[1] === 0x50;
+      const isWebp = buffer[8] === 0x57 && buffer[9] === 0x45;
+      const format = isPng ? 'png' : isWebp ? 'webp' : 'jpeg';
+      return {
+        url: `data:image/${format};base64,${buffer.toString('base64')}`,
+        publicId: `fallback_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        format
+      };
     }
 
     return new Promise((resolve, reject) => {
@@ -46,29 +39,15 @@ export const uploadService = {
         },
         (error, result) => {
           if (error) {
-            console.warn(`[Cloudinary] Remote upload failed: ${error.message} (HTTP ${error.http_code || 500})`);
-
-            // In development, fall back gracefully to data URI so local testing is never blocked
-            if (isDev) {
-              console.warn('[Cloudinary] Falling back to development base64 Data URI for uploaded image.');
-              const isPng = buffer[0] === 0x89 && buffer[1] === 0x50;
-              const isWebp = buffer[8] === 0x57 && buffer[9] === 0x45;
-              const format = isPng ? 'png' : isWebp ? 'webp' : 'jpeg';
-              return resolve({
-                url: `data:image/${format};base64,${buffer.toString('base64')}`,
-                publicId: `dev_fallback_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-                format
-              });
-            }
-
-            let errorMsg = `Cloudinary upload failed: ${error.message}`;
-            if (error.http_code === 403 || error.message?.includes('403')) {
-              errorMsg = `Cloudinary upload failed (HTTP 403): The configured API key lacks 'create' (upload) permission. Please check your Cloudinary Console access keys or update server/.env.`;
-            }
-
-            return reject(
-              new ApiError(500, errorMsg, 'UPLOAD_FAILED')
-            );
+            console.warn(`[Cloudinary] Remote upload failed (${error.message}, HTTP ${error.http_code || 500}). Falling back to Data URI so reporting never fails.`);
+            const isPng = buffer[0] === 0x89 && buffer[1] === 0x50;
+            const isWebp = buffer[8] === 0x57 && buffer[9] === 0x45;
+            const format = isPng ? 'png' : isWebp ? 'webp' : 'jpeg';
+            return resolve({
+              url: `data:image/${format};base64,${buffer.toString('base64')}`,
+              publicId: `fallback_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+              format
+            });
           }
 
           resolve({
@@ -109,7 +88,7 @@ export const uploadService = {
    * @param {string} publicId
    */
   async deleteImage(publicId) {
-    if (!publicId || publicId.startsWith('dev_') || !isCloudinaryConfigured()) {
+    if (!publicId || publicId.startsWith('fallback_') || publicId.startsWith('dev_') || !isCloudinaryConfigured()) {
       return;
     }
 
