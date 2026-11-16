@@ -4,6 +4,10 @@ import claimService from '../services/claimService.js';
 import searchService from '../services/searchService.js';
 import notificationService from '../services/notificationService.js';
 import reportService from '../services/reportService.js';
+import aiMatchService from '../services/aiMatchService.js';
+import categoryService from '../services/categoryService.js';
+import Item from '../models/Item.js';
+import Claim from '../models/Claim.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
@@ -20,6 +24,63 @@ export const userController = {
     return ApiResponse.ok(res, { user }, 'Profile updated successfully');
   }),
 
+  // ── Dashboard Aggregated Statistics ────────────────────────────────────
+  getDashboardStats: asyncHandler(async (req, res) => {
+    const userId = req.user._id;
+
+    const [
+      totalLost,
+      totalFound,
+      pendingReports,
+      approvedReports,
+      rejectedReports,
+      resolvedRecoveries,
+      activeClaims,
+      resolvedClaims,
+      notificationsResult,
+      aiMatchesResult,
+      liveCampusItems
+    ] = await Promise.all([
+      Item.countDocuments({ reportedBy: userId, type: 'LOST' }),
+      Item.countDocuments({ reportedBy: userId, type: 'FOUND' }),
+      Item.countDocuments({ reportedBy: userId, status: 'PENDING' }),
+      Item.countDocuments({ reportedBy: userId, status: 'APPROVED' }),
+      Item.countDocuments({ reportedBy: userId, status: 'REJECTED' }),
+      Item.countDocuments({ reportedBy: userId, status: 'RESOLVED' }),
+      Claim.countDocuments({ claimantId: userId, status: { $in: ['PENDING', 'APPROVED'] } }),
+      Claim.countDocuments({ claimantId: userId, status: 'APPROVED' }),
+      notificationService.getUserNotifications(userId, { limit: 5 }),
+      aiMatchService.getUserAIMatches(userId),
+      Item.find({ status: 'APPROVED' })
+        .populate('categoryId', 'name')
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .lean()
+    ]);
+
+    return ApiResponse.ok(
+      res,
+      {
+        stats: {
+          totalLost,
+          totalFound,
+          pendingReports,
+          approvedReports,
+          rejectedReports,
+          resolvedRecoveries,
+          activeClaims,
+          resolvedClaims,
+          unreadNotifications: notificationsResult.unreadCount,
+          aiMatchesCount: aiMatchesResult.matches.length
+        },
+        recentNotifications: notificationsResult.notifications,
+        topAIMatch: aiMatchesResult.matches[0] || null,
+        liveCampusItems
+      },
+      'User dashboard statistics retrieved successfully'
+    );
+  }),
+
   // ── Items ───────────────────────────────────────────────────────────────
   getMyItems: asyncHandler(async (req, res) => {
     const { status, type, page, limit } = req.query;
@@ -28,13 +89,12 @@ export const userController = {
   }),
 
   createItem: asyncHandler(async (req, res) => {
-    // Location can come as an object or parsed JSON if sent via multipart/form-data
     let location = req.body.location;
     if (typeof location === 'string') {
       try {
         location = JSON.parse(location);
       } catch {
-        // Fallback to location fields on root if separate
+        // Fallback
       }
     }
 
@@ -126,6 +186,24 @@ export const userController = {
   markNotificationRead: asyncHandler(async (req, res) => {
     const notification = await notificationService.markNotificationAsRead(req.params.id, req.user._id);
     return ApiResponse.ok(res, { notification }, 'Notification marked as read');
+  }),
+
+  // ── AI Matches for User ─────────────────────────────────────────────────
+  getMyAIMatches: asyncHandler(async (req, res) => {
+    const { lostItemId } = req.query;
+    const result = await aiMatchService.getUserAIMatches(req.user._id, lostItemId);
+    return ApiResponse.ok(res, result, 'AI match suggestions retrieved successfully');
+  }),
+
+  dismissAIMatch: asyncHandler(async (req, res) => {
+    const match = await aiMatchService.dismissMatch(req.params.id, req.user._id);
+    return ApiResponse.ok(res, { match }, 'AI match dismissed successfully');
+  }),
+
+  // ── Categories (Public) ─────────────────────────────────────────────────
+  getCategories: asyncHandler(async (req, res) => {
+    const categories = await categoryService.getCategories({ activeOnly: true });
+    return ApiResponse.ok(res, { categories }, 'Active categories retrieved successfully');
   }),
 
   // ── Public Search ───────────────────────────────────────────────────────
